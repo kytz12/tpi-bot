@@ -2,44 +2,46 @@ import xarray as xr
 import numpy as np
 import cfgrib
 
-GRIB_PATH = "data/hrrr.grib2"
+GRIB = "data/hrrr.grib2"
 
-def pick_var(ds, names):
-    """Pick the first variable that exists (case-insensitive)."""
-    lower = {k.lower(): k for k in ds.variables.keys()}
-    for n in names:
-        if n.lower() in lower:
-            return ds[lower[n.lower()]]
-    return None
-
-# 1) Open ALL GRIB “groups” and merge them (fixes DatasetBuildError)
-datasets = cfgrib.open_datasets(GRIB_PATH)
+# Open all GRIB groups and merge
+datasets = cfgrib.open_datasets(GRIB)
 ds = xr.merge(datasets, compat="override")
 
-# 2) Grab fields (names vary slightly; we search robustly)
-cape = pick_var(ds, ["cape"])
-cin  = pick_var(ds, ["cin"])
-lcl  = pick_var(ds, ["lcl"])
+def pick(name):
+    for k in ds.variables:
+        if k.lower() == name.lower():
+            return ds[k]
+    raise KeyError(f"{name} not found")
 
-# If any are missing, print what we *do* have so we can adjust
-missing = [n for n,v in [("cape",cape),("cin",cin),("lcl",lcl)] if v is None]
-if missing:
-    print("Missing vars:", missing)
-    print("Available vars:", sorted(list(ds.variables.keys()))[:200])
-    raise SystemExit("Required variables not found in GRIB. See log for available vars.")
+cape = pick("cape")
+cin  = pick("cin")
+t2m  = pick("t2m")    # 2m temperature (K)
+d2m  = pick("d2m")    # 2m dewpoint (K)
+u10  = pick("u10")    # 10m u wind
+v10  = pick("v10")    # 10m v wind
 
-# 3) Compute a simple MVP TPI
-CAPE = cape.values
-CIN  = cin.values
-LCL  = lcl.values
+# Convert K → C
+T = t2m - 273.15
+Td = d2m - 273.15
 
-cape_n = np.clip(CAPE / 2000.0, 0, 1)
-lcl_n  = np.clip(1.0 - (LCL / 2000.0), 0, 1)
-cin_n  = np.clip(1.0 + (CIN / 100.0), 0, 1)
+# Bolton LCL (meters)
+lcl = 125.0 * (T - Td)
 
-tpi = cape_n * lcl_n * cin_n
+# 10m wind speed proxy for low-level shear
+shear = np.sqrt(u10**2 + v10**2)
+
+# Normalize fields
+cape_n  = np.clip(cape / 3000.0, 0, 1)
+lcl_n   = np.clip(1 - (lcl / 2000.0), 0, 1)
+cin_n   = np.clip(1 + (cin / 150.0), 0, 1)
+shear_n = np.clip(shear / 20.0, 0, 1)
+
+# Tornado Potential Index
+tpi = cape_n * lcl_n * cin_n * shear_n
 tpi = np.clip(tpi, 0, 1)
 
 out = xr.Dataset({"tpi": (cape.dims, tpi)}, coords={k: ds.coords[k] for k in ds.coords})
 out.to_netcdf("data/tpi.nc")
-print("Wrote data/tpi.nc")
+
+print("TPI written to data/tpi.nc")
