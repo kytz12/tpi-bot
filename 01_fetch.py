@@ -23,7 +23,7 @@ def try_download(dt_utc: datetime, fhr: int = 1) -> bool:
 
 def main():
     now = datetime.now(timezone.utc)
-    for back in range(0, 7):  # try last 6 hours
+    for back in range(0, 7):  # last 6 hours
         if try_download(now - timedelta(hours=back), fhr=1):
             return
     raise SystemExit("Could not find an available HRRR file in the last 6 hours on NOMADS.")
