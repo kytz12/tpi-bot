@@ -1,0 +1,5 @@
+model: hrrr_2d
+area: conus
+fhr: 1
+post:
+  discord: false

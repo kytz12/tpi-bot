@@ -1,0 +1,9 @@
+numpy
+pandas
+xarray
+cfgrib
+eccodes
+pyyaml
+requests
+matplotlib
+cartopy
