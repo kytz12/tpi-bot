@@ -1,5 +1,8 @@
-model: hrrr_2d
-area: conus
-fhr: 1
-post:
-  discord: false
+# Date of the event (UTC-based SPC daily report date)
+date: "2011-04-27"
+
+# What to map
+event: "tornado"
+
+# Output image name
+output_png: "tornado_reports_map.png"
