@@ -1,48 +1,59 @@
-import xarray as xr
 import os
+import xarray as xr
+import numpy as np
 
-# Open only isobaric fields to avoid cfgrib merge crashes
+os.makedirs("data", exist_ok=True)
+
+grib_path = "data/grib.grib2"
+if not os.path.exists(grib_path):
+    raise FileNotFoundError(f"Missing {grib_path}. Did 01_fetch.py download it?")
+
+print("Opening:", grib_path)
+
+# Open ONLY isobaric instant fields to avoid cfgrib merge conflicts
 ds = xr.open_dataset(
-    "data/grib.grib2",
+    grib_path,
     engine="cfgrib",
     backend_kwargs={
         "filter_by_keys": {
             "typeOfLevel": "isobaricInhPa",
-            "stepType": "instant"
+            "stepType": "instant",
         }
-    }
+    },
 )
 
-# Make sure required fields exist
-required = ["t", "u", "v", "q"]
-for r in required:
-    if r not in ds:
-        raise RuntimeError(f"Missing variable: {r}")
+# Check we have what we need
+need = ["t", "u", "v"]
+missing = [x for x in need if x not in ds.variables]
+if missing:
+    raise RuntimeError(f"Missing vars in GRIB: {missing}. Available: {sorted(ds.variables)}")
 
-# Pick key pressure levels
+levels = set(ds["isobaricInhPa"].values.tolist())
+for lvl in (850, 500):
+    if lvl not in levels:
+        raise RuntimeError(f"Missing {lvl} hPa in file. Levels found: {sorted(levels)}")
+
+# Instability proxy: lapse-ish (T850 - T500) in K
 t850 = ds["t"].sel(isobaricInhPa=850)
 t500 = ds["t"].sel(isobaricInhPa=500)
+instab = (t850 - t500)
+
+# Deep layer shear proxy: wind magnitude difference 850->500 (m/s)
 u850 = ds["u"].sel(isobaricInhPa=850)
 v850 = ds["v"].sel(isobaricInhPa=850)
 u500 = ds["u"].sel(isobaricInhPa=500)
 v500 = ds["v"].sel(isobaricInhPa=500)
+shear = np.sqrt((u500 - u850) ** 2 + (v500 - v850) ** 2)
 
-# Simple instability proxy (lapse rate)
-lapse = t850 - t500
+# Normalize lightly so output is 0..1-ish (optional but helps plotting)
+instab_n = ((instab - 10) / 25).clip(0, 1)   # tweakable
+shear_n  = (shear / 35).clip(0, 1)
 
-# Deep-layer shear proxy
-shear = ((u500 - u850) ** 2 + (v500 - v850) ** 2) ** 0.5
+tpi = (instab_n * shear_n).clip(0, 1)
+tpi.name = "tpi"
 
-# Tornado Parameter Index (simple but physically meaningful)
-tpi = lapse * shear
+tpi_ds = xr.Dataset({"tpi": tpi})
 
-# Package as Dataset
-tpi_ds = xr.Dataset(
-    {"tpi": tpi},
-    coords={"lat": tpi.latitude, "lon": tpi.longitude}
-)
-
-# Save output
-os.makedirs("data", exist_ok=True)
-tpi_ds.to_netcdf("data/tpi.nc")
-print("Saved data/tpi.nc")
+out_nc = "data/tpi.nc"
+tpi_ds.to_netcdf(out_nc)
+print("Saved", out_nc)
