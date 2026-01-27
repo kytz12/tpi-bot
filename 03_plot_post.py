@@ -1,23 +1,62 @@
 import os
-import xarray as xr
+import sys
+import pandas as pd
 import matplotlib.pyplot as plt
 
-os.makedirs("out", exist_ok=True)
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
-nc_path = "data/tpi.nc"
-if not os.path.exists(nc_path):
-    print("No data/tpi.nc found; skipping plot.")
-    raise SystemExit(0)
+def read_config_date_and_outname():
+    date = None
+    outpng = "tornado_reports_map.png"
+    with open("config.yml", "r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if s.startswith("date:"):
+                date = s.split(":", 1)[1].strip().strip('"').strip("'")
+            if s.startswith("output_png:"):
+                outpng = s.split(":", 1)[1].strip().strip('"').strip("'")
+    return date, outpng
 
-ds = xr.open_dataset(nc_path)
-if "tpi" not in ds:
-    raise RuntimeError(f"'tpi' not found in {nc_path}. Keys: {list(ds.data_vars)}")
+def main():
+    date, outpng = read_config_date_and_outname()
+    pts_path = "data/torn_points.csv"
+    if not os.path.exists(pts_path):
+        print("Missing data/torn_points.csv. Run 02_compute_tpi.py first.", file=sys.stderr)
+        sys.exit(1)
 
-tpi = ds["tpi"]
+    pts = pd.read_csv(pts_path)
 
-plt.figure(figsize=(12, 7))
-tpi.plot()  # xarray chooses lat/lon if present, otherwise array index
-plt.title("TPI (Instability × Shear proxy)")
-plt.tight_layout()
-plt.savefig("out/tpi.png", dpi=150)
-print("Wrote out/tpi.png")
+    os.makedirs("out", exist_ok=True)
+    out_path = os.path.join("out", outpng)
+
+    # Map
+    proj = ccrs.LambertConformal(central_longitude=-96, central_latitude=39)
+    fig = plt.figure(figsize=(12, 7))
+    ax = plt.axes(projection=proj)
+
+    # CONUS-ish extent
+    ax.set_extent([-125, -66, 24, 50], crs=ccrs.PlateCarree())
+
+    ax.add_feature(cfeature.LAND, linewidth=0)
+    ax.add_feature(cfeature.OCEAN, linewidth=0)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    ax.add_feature(cfeature.BORDERS, linewidth=0.5)
+    ax.add_feature(cfeature.STATES, linewidth=0.3)
+
+    ax.scatter(
+        pts["lon"], pts["lat"],
+        s=8,
+        transform=ccrs.PlateCarree(),
+        alpha=0.7
+    )
+
+    title = f"SPC Tornado Reports (points) — {date}" if date else "SPC Tornado Reports (points)"
+    ax.set_title(title)
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200)
+    print(f"Saved map -> {out_path}")
+
+if __name__ == "__main__":
+    main()
