@@ -1,37 +1,23 @@
+import os
 import xarray as xr
 import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import os
-
-ds = xr.open_dataset("data/tpi.nc")
-tpi = ds["tpi"]
-
-# Try to find lat/lon coordinate names (HRRR via cfgrib can be weird)
-lat_name = None
-lon_name = None
-for c in tpi.coords:
-    cl = c.lower()
-    if cl in ("latitude", "lat"):
-        lat_name = c
-    if cl in ("longitude", "lon"):
-        lon_name = c
-
-# If lat/lon exist, use them; otherwise just plot array (still produces png)
-plt.figure(figsize=(11, 6))
-ax = plt.axes(projection=ccrs.PlateCarree())
-ax.coastlines()
-ax.set_extent([-125, -66, 24, 50])
-
-if lat_name and lon_name:
-    tpi.plot(ax=ax, transform=ccrs.PlateCarree(), cmap="hot")
-else:
-    # Fallback
-    plt.title("TPI (coords not labeled lat/lon)")
-    plt.imshow(tpi.values)
-    plt.colorbar()
 
 os.makedirs("out", exist_ok=True)
-plt.savefig("out/tpi.png", dpi=160, bbox_inches="tight")
-plt.close()
 
-print("Saved out/tpi.png")
+nc_path = "data/tpi.nc"
+if not os.path.exists(nc_path):
+    print("No data/tpi.nc found; skipping plot.")
+    raise SystemExit(0)
+
+ds = xr.open_dataset(nc_path)
+if "tpi" not in ds:
+    raise RuntimeError(f"'tpi' not found in {nc_path}. Keys: {list(ds.data_vars)}")
+
+tpi = ds["tpi"]
+
+plt.figure(figsize=(12, 7))
+tpi.plot()  # xarray chooses lat/lon if present, otherwise array index
+plt.title("TPI (Instability × Shear proxy)")
+plt.tight_layout()
+plt.savefig("out/tpi.png", dpi=150)
+print("Wrote out/tpi.png")
