@@ -1,46 +1,55 @@
 import os
+import sys
 import requests
 from datetime import datetime
 
-os.makedirs("data", exist_ok=True)
+def yymmdd_from_iso(date_str: str) -> str:
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return dt.strftime("%y%m%d")  # YYMMDD
 
-BASE = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod"
+def download(url: str, out_path: str, timeout: int = 60) -> bool:
+    r = requests.get(url, timeout=timeout)
+    if r.status_code == 200 and r.content:
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "wb") as f:
+            f.write(r.content)
+        return True
+    return False
 
-def try_download(url: str, out_path: str) -> bool:
-    r = requests.get(url, stream=True, timeout=60)
-    if r.status_code != 200:
-        print("Not available:", r.status_code, url)
-        return False
-    with open(out_path, "wb") as f:
-        for chunk in r.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                f.write(chunk)
-    print("Downloaded OK:", url)
-    return True
+def main():
+    # Read config date from config.yml (simple parse; avoids extra deps)
+    date = None
+    with open("config.yml", "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip().startswith("date:"):
+                date = line.split(":", 1)[1].strip().strip('"').strip("'")
+                break
 
-# Use UTC date/hour by default (override with env vars if you want)
-# Example override: DATE=20260126 HOUR=21 FHR=00
-date = os.environ.get("DATE", datetime.utcnow().strftime("%Y%m%d"))
-hour = int(os.environ.get("HOUR", datetime.utcnow().strftime("%H")))
-fhr = int(os.environ.get("FHR", "0"))
+    if not date:
+        print("Could not find `date:` in config.yml", file=sys.stderr)
+        sys.exit(1)
 
-# HRRR cycles are 00-23; round hour down to nearest cycle hour
-cycle = f"{hour:02d}"
-fhr_str = f"{fhr:02d}"
+    yymmdd = yymmdd_from_iso(date)
 
-# Prefer CONUS, surface fields file: wrfsfcf
-# Example:
-# .../hrrr.20260126/conus/hrrr.t21z.wrfsfcf01.grib2
-fn = f"hrrr.t{cycle}z.wrfsfcf{fhr_str}.grib2"
-url = f"{BASE}/hrrr.{date}/conus/{fn}"
+    # SPC archived daily tornado CSV format (YYMMDD_rpts_torn.csv)
+    # SPC also documents report URLs with YYMMDD_rpts.gif and YYMMDD_prt_rpts.html :contentReference[oaicite:1]{index=1}
+    csv_url = f"https://www.spc.noaa.gov/climo/reports/{yymmdd}_rpts_torn.csv"
+    gif_url = f"https://www.spc.noaa.gov/climo/reports/{yymmdd}_rpts.gif"
+    html_url = f"https://www.spc.noaa.gov/climo/reports/{yymmdd}_prt_rpts.html"
 
-out_path = "data/grib.grib2"
-ok = try_download(url, out_path)
+    ok_csv = download(csv_url, "data/torn.csv")
+    ok_gif = download(gif_url, "data/spc_rpts.gif")
+    ok_html = download(html_url, "data/spc_prt_rpts.html")
 
-if not ok:
-    # fallback: try fhr=01 if 00 missing (sometimes timing)
-    fn2 = f"hrrr.t{cycle}z.wrfsfcf01.grib2"
-    url2 = f"{BASE}/hrrr.{date}/conus/{fn2}"
-    ok2 = try_download(url2, out_path)
-    if not ok2:
-        raise SystemExit("Could not download HRRR GRIB2. Try different DATE/HOUR/FHR.")
+    if not ok_csv:
+        print(f"Could not download tornado CSV (maybe no tornado file for that day): {csv_url}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Downloaded: {csv_url} -> data/torn.csv")
+    if ok_gif:
+        print(f"Downloaded: {gif_url} -> data/spc_rpts.gif")
+    if ok_html:
+        print(f"Downloaded: {html_url} -> data/spc_prt_rpts.html")
+
+if __name__ == "__main__":
+    main()
