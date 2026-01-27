@@ -7,25 +7,19 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libeccodes0
+      - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python deps
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run tornado engine
+      - name: Run outbreak mapper
         run: |
           python 01_fetch.py
           python 02_compute_tpi.py
@@ -34,5 +28,5 @@ jobs:
       - name: Upload maps
         uses: actions/upload-artifact@v4
         with:
-          name: maps
+          name: outbreak-maps
           path: out/*.png
