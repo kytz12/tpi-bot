@@ -1,7 +1,6 @@
 requests
-numpy
-xarray
-cfgrib
-eccodes
+pandas
 matplotlib
-netCDF4
+cartopy
+pyproj
+shapely
