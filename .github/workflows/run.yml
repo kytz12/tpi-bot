@@ -2,19 +2,18 @@ name: run-tpi
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "15 * * * *"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libeccodes0 libeccodes-dev proj-bin libproj-dev
+          sudo apt-get install -y libeccodes0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,5 +34,5 @@ jobs:
       - name: Upload maps
         uses: actions/upload-artifact@v4
         with:
-          name: tpi-output
+          name: maps
           path: out/*.png
