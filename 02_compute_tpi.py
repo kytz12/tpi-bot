@@ -1,59 +1,37 @@
 import os
-import xarray as xr
-import numpy as np
+import sys
+import pandas as pd
 
-os.makedirs("data", exist_ok=True)
+def main():
+    in_csv = "data/torn.csv"
+    if not os.path.exists(in_csv):
+        print("Missing data/torn.csv. Run 01_fetch.py first.", file=sys.stderr)
+        sys.exit(1)
 
-grib_path = "data/grib.grib2"
-if not os.path.exists(grib_path):
-    raise FileNotFoundError(f"Missing {grib_path}. Did 01_fetch.py download it?")
+    df = pd.read_csv(in_csv)
 
-print("Opening:", grib_path)
+    # SPC tornado report CSVs typically include LAT/LON columns (names can vary a bit)
+    # We'll try common options.
+    possible_lat = ["LAT", "Lat", "lat", "slat"]
+    possible_lon = ["LON", "Lon", "lon", "slon"]
 
-# Open ONLY isobaric instant fields to avoid cfgrib merge conflicts
-ds = xr.open_dataset(
-    grib_path,
-    engine="cfgrib",
-    backend_kwargs={
-        "filter_by_keys": {
-            "typeOfLevel": "isobaricInhPa",
-            "stepType": "instant",
-        }
-    },
-)
+    lat_col = next((c for c in possible_lat if c in df.columns), None)
+    lon_col = next((c for c in possible_lon if c in df.columns), None)
 
-# Check we have what we need
-need = ["t", "u", "v"]
-missing = [x for x in need if x not in ds.variables]
-if missing:
-    raise RuntimeError(f"Missing vars in GRIB: {missing}. Available: {sorted(ds.variables)}")
+    if lat_col is None or lon_col is None:
+        print("Could not find LAT/LON columns in CSV. Columns are:", list(df.columns), file=sys.stderr)
+        sys.exit(1)
 
-levels = set(ds["isobaricInhPa"].values.tolist())
-for lvl in (850, 500):
-    if lvl not in levels:
-        raise RuntimeError(f"Missing {lvl} hPa in file. Levels found: {sorted(levels)}")
+    out = df[[lat_col, lon_col]].copy()
+    out.columns = ["lat", "lon"]
 
-# Instability proxy: lapse-ish (T850 - T500) in K
-t850 = ds["t"].sel(isobaricInhPa=850)
-t500 = ds["t"].sel(isobaricInhPa=500)
-instab = (t850 - t500)
+    # Clean
+    out = out.dropna()
+    out = out[(out["lat"].between(10, 80)) & (out["lon"].between(-180, -30))]
 
-# Deep layer shear proxy: wind magnitude difference 850->500 (m/s)
-u850 = ds["u"].sel(isobaricInhPa=850)
-v850 = ds["v"].sel(isobaricInhPa=850)
-u500 = ds["u"].sel(isobaricInhPa=500)
-v500 = ds["v"].sel(isobaricInhPa=500)
-shear = np.sqrt((u500 - u850) ** 2 + (v500 - v850) ** 2)
+    os.makedirs("data", exist_ok=True)
+    out.to_csv("data/torn_points.csv", index=False)
+    print(f"Saved {len(out)} points -> data/torn_points.csv")
 
-# Normalize lightly so output is 0..1-ish (optional but helps plotting)
-instab_n = ((instab - 10) / 25).clip(0, 1)   # tweakable
-shear_n  = (shear / 35).clip(0, 1)
-
-tpi = (instab_n * shear_n).clip(0, 1)
-tpi.name = "tpi"
-
-tpi_ds = xr.Dataset({"tpi": tpi})
-
-out_nc = "data/tpi.nc"
-tpi_ds.to_netcdf(out_nc)
-print("Saved", out_nc)
+if __name__ == "__main__":
+    main()
