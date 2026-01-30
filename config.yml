@@ -6,3 +6,8 @@ event: "tornado"
 
 # Output image name
 output_png: "tornado_reports_map.png"
+
+grid_res_deg: 0.25
+radius_miles: 25
+extent: [-125, -66, 24, 50]
+labels_csv: "data/grid_labels.csv"
