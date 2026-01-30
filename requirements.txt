@@ -4,3 +4,5 @@ matplotlib
 cartopy
 pyproj
 shapely
+scikit-learn
+joblib
