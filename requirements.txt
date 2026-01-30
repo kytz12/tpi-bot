@@ -6,3 +6,4 @@ pyproj
 shapely
 scikit-learn
 joblib
+pip install -r requirements.txt
